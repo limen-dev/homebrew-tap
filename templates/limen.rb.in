@@ -1,0 +1,39 @@
+# Written by scripts/render-formula.sh from a Limen release. Don't edit by hand.
+class Limen < Formula
+  desc "CLI for short-lived, audited access to SSH, databases and Kubernetes"
+  homepage "https://github.com/limen-dev/limen"
+  version "@VERSION@"
+  license "Apache-2.0"
+
+  on_macos do
+    on_arm do
+      url "https://github.com/limen-dev/limen/releases/download/v@VERSION@/limen-v@VERSION@-aarch64-apple-darwin.tar.gz"
+      sha256 "@SHA_aarch64-apple-darwin@"
+    end
+    on_intel do
+      url "https://github.com/limen-dev/limen/releases/download/v@VERSION@/limen-v@VERSION@-x86_64-apple-darwin.tar.gz"
+      sha256 "@SHA_x86_64-apple-darwin@"
+    end
+  end
+
+  on_linux do
+    on_arm do
+      url "https://github.com/limen-dev/limen/releases/download/v@VERSION@/limen-v@VERSION@-aarch64-unknown-linux-gnu.tar.gz"
+      sha256 "@SHA_aarch64-unknown-linux-gnu@"
+    end
+    on_intel do
+      url "https://github.com/limen-dev/limen/releases/download/v@VERSION@/limen-v@VERSION@-x86_64-unknown-linux-gnu.tar.gz"
+      sha256 "@SHA_x86_64-unknown-linux-gnu@"
+    end
+  end
+
+  def install
+    # The archive also holds the server binaries; the tap installs only the client tools.
+    bin.install "limen", "limen-audit-verify"
+    generate_completions_from_executable(bin/"limen", "completions")
+  end
+
+  test do
+    assert_match version.to_s, shell_output("#{bin}/limen --version")
+  end
+end
