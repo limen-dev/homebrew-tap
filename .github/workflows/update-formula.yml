@@ -1,0 +1,60 @@
+name: update-formula
+
+# Opens a pull request that points Formula/limen.rb at a Limen release.
+# Run by hand for now: gh workflow run update-formula.yml -f tag=v0.1.0
+# While limen-dev/limen is private, the LIMEN_RELEASES_TOKEN secret must be able
+# to read its releases; once it is public, the default token is enough.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Limen release tag, for example v0.1.0
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: update-formula
+  cancel-in-progress: false
+
+jobs:
+  update:
+    name: Formula for ${{ inputs.tag }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      TAG: ${{ inputs.tag }}
+    steps:
+      - name: Check out the tap
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Download the release checksums
+        env:
+          GH_TOKEN: ${{ secrets.LIMEN_RELEASES_TOKEN || github.token }}
+        run: gh release download "$TAG" -R limen-dev/limen -p SHA256SUMS -D "$RUNNER_TEMP"
+
+      - name: Render the formula
+        run: scripts/render-formula.sh "$TAG" "$RUNNER_TEMP/SHA256SUMS"
+
+      - name: Check it with brew style
+        run: |
+          eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+          brew style Formula/limen.rb
+
+      - name: Open the pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          branch="formula/limen-${TAG}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          git add Formula/limen.rb
+          git commit -m "feat: limen ${TAG}"
+          git push origin "$branch"
+          gh pr create --title "feat: limen ${TAG}" --body "Formula for https://github.com/limen-dev/limen/releases/tag/${TAG}, from its SHA256SUMS."
