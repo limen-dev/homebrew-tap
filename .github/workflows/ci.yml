@@ -51,6 +51,8 @@ jobs:
           dir="$(brew --repository)/Library/Taps/limen-dev/homebrew-tap"
           mkdir -p "$(dirname "$dir")"
           ln -s "$GITHUB_WORKSPACE" "$dir"
+          # Newer Homebrew refuses to load formulae from a tap it has not been told to trust.
+          brew trust limen-dev/tap 2>/dev/null || true
 
       - name: Style, audit, install and test
         if: steps.formula.outputs.present
