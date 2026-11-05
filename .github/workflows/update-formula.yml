@@ -1,16 +1,18 @@
 name: update-formula
 
-# Opens a pull request that points Formula/limen.rb at a Limen release.
-# Run by hand for now: gh workflow run update-formula.yml -f tag=v0.1.0
-# While limen-dev/limen is private, the LIMEN_RELEASES_TOKEN secret must be able
-# to read its releases; once it is public, the default token is enough.
+# Follows the latest Limen release (pre-releases included): when the formula is behind, opens a
+# pull request that points Formula/limen.rb at it. Runs every hour and needs no secret, since the
+# releases are public. To do a specific release by hand:
+#   gh workflow run update-formula.yml -f tag=v0.1.0
 
 on:
+  schedule:
+    - cron: "17 * * * *"
   workflow_dispatch:
     inputs:
       tag:
-        description: Limen release tag, for example v0.1.0
-        required: true
+        description: Limen release tag, for example v0.1.0 (default is the latest release)
+        required: false
         type: string
 
 permissions:
@@ -24,24 +26,44 @@ concurrency:
 
 jobs:
   update:
-    name: Formula for ${{ inputs.tag }}
+    name: Update the formula
     runs-on: ubuntu-24.04
     timeout-minutes: 10
-    env:
-      TAG: ${{ inputs.tag }}
     steps:
       - name: Check out the tap
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Download the release checksums
+      # Sets TAG, which the later steps need, only when there is something to do: a release the
+      # formula is behind and no pull request branch for it yet (an open or merged one).
+      - name: Pick the release
         env:
-          GH_TOKEN: ${{ secrets.LIMEN_RELEASES_TOKEN || github.token }}
+          GH_TOKEN: ${{ github.token }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          tag="${INPUT_TAG:-}"
+          if [ -z "$tag" ]; then
+            tag="$(gh release list -R limen-dev/limen --exclude-drafts --limit 1 --json tagName --jq '.[0].tagName // empty')"
+          fi
+          if [ -z "$tag" ]; then echo "No Limen release yet."; exit 0; fi
+          if grep -qF "/download/${tag}/" Formula/limen.rb 2>/dev/null; then echo "The formula is already at ${tag}."; exit 0; fi
+          if gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/formula/limen-${tag}" > /dev/null 2>&1; then
+            echo "Branch formula/limen-${tag} exists already."; exit 0
+          fi
+          echo "TAG=${tag}" >> "$GITHUB_ENV"
+
+      - name: Download the release checksums
+        if: env.TAG
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: gh release download "$TAG" -R limen-dev/limen -p SHA256SUMS -D "$RUNNER_TEMP"
 
       - name: Render the formula
+        if: env.TAG
         run: scripts/render-formula.sh "$TAG" "$RUNNER_TEMP/SHA256SUMS"
 
       - name: Check it with brew style
+        if: env.TAG
         run: |
           eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
           brew style Formula/limen.rb
@@ -50,6 +72,7 @@ jobs:
       # a git push from the runner would be unsigned. Pushes with the default token start no
       # workflows, so ci.yml is dispatched by hand, as limen-dev/limen does for its release PR.
       - name: Open the pull request
+        if: env.TAG
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
