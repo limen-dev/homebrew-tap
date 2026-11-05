@@ -1,0 +1,63 @@
+name: ci
+
+# Checks every formula change, including the pull requests that update-formula opens.
+# Pull requests opened with the default token start no workflows, so run this one by hand on those:
+#   gh workflow run ci.yml -R limen-dev/homebrew-tap --ref formula/limen-v0.1.0
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  scripts:
+    name: Scripts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: shellcheck
+        run: shellcheck scripts/*.sh
+
+  formula:
+    name: Formula on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-latest]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check for a formula
+        id: formula
+        run: |
+          if [ -f Formula/limen.rb ]; then echo "present=true" >> "$GITHUB_OUTPUT"; else echo "No formula yet."; fi
+
+      - name: Put this checkout in a tap
+        if: steps.formula.outputs.present
+        run: |
+          eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv 2>/dev/null || /opt/homebrew/bin/brew shellenv)"
+          dir="$(brew --repository)/Library/Taps/limen-dev/homebrew-tap"
+          mkdir -p "$(dirname "$dir")"
+          ln -s "$GITHUB_WORKSPACE" "$dir"
+
+      - name: Style, audit, install and test
+        if: steps.formula.outputs.present
+        run: |
+          set -euo pipefail
+          eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv 2>/dev/null || /opt/homebrew/bin/brew shellenv)"
+          brew style limen-dev/tap/limen
+          brew audit --strict --online limen-dev/tap/limen
+          brew install limen-dev/tap/limen
+          brew test limen-dev/tap/limen
