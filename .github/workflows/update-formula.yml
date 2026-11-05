@@ -16,6 +16,7 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  actions: write
 
 concurrency:
   group: update-formula
@@ -45,16 +46,24 @@ jobs:
           eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
           brew style Formula/limen.rb
 
+      # The commit is made through the API so that GitHub signs it (main requires verified signatures);
+      # a git push from the runner would be unsigned. Pushes with the default token start no
+      # workflows, so ci.yml is dispatched by hand, as limen-dev/limen does for its release PR.
       - name: Open the pull request
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          if git diff --quiet -- Formula/limen.rb; then
+            echo "Formula/limen.rb is already at ${TAG}."
+            exit 0
+          fi
           branch="formula/limen-${TAG}"
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git switch -c "$branch"
-          git add Formula/limen.rb
-          git commit -m "feat: limen ${TAG}"
-          git push origin "$branch"
-          gh pr create --title "feat: limen ${TAG}" --body "Formula for https://github.com/limen-dev/limen/releases/tag/${TAG}, from its SHA256SUMS."
+          api="repos/${GITHUB_REPOSITORY}"
+          gh api "${api}/git/refs" -f ref="refs/heads/${branch}" -f sha="$(git rev-parse HEAD)" > /dev/null
+          args=(-X PUT -f message="feat: limen ${TAG}" -f branch="${branch}" -f content="$(base64 -w0 Formula/limen.rb)")
+          if blob="$(git rev-parse --verify --quiet HEAD:Formula/limen.rb)"; then args+=(-f sha="${blob}"); fi
+          gh api "${api}/contents/Formula/limen.rb" "${args[@]}" > /dev/null
+          gh pr create --head "${branch}" --base main --title "feat: limen ${TAG}" \
+            --body "Formula for https://github.com/limen-dev/limen/releases/tag/${TAG}, from its SHA256SUMS. \`ci.yml\` was started on this branch by the workflow."
+          gh workflow run ci.yml --ref "${branch}"
