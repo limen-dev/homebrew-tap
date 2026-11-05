@@ -2,7 +2,6 @@
 class Limen < Formula
   desc "CLI for short-lived, audited access to SSH, databases and Kubernetes"
   homepage "https://github.com/limen-dev/limen"
-  version "@VERSION@"
   license "Apache-2.0"
 
   on_macos do
