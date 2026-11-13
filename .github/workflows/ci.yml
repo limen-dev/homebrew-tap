@@ -63,3 +63,26 @@ jobs:
           brew audit --strict --online limen-dev/tap/limen
           brew install limen-dev/tap/limen
           brew test limen-dev/tap/limen
+
+  ci-ok:
+    name: ci-ok
+    # The one check the ruleset requires. always(), so a failed job fails this one instead of skipping it.
+    if: always()
+    needs: [scripts, formula]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Every job passed
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, os, sys
+          needs = json.loads(os.environ["NEEDS"])
+          for name, n in needs.items():
+              print(name + ": " + n["result"])
+          bad = [k for k, n in needs.items() if n["result"] not in ("success", "skipped")]
+          if bad:
+              sys.exit("failed: " + ", ".join(bad))
+          PY
